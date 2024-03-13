@@ -14,8 +14,8 @@ float randf() {
     return (float)rand() / (float)(RAND_MAX);
 }
 
-float calculateForce(float dist) {
-    float force = 5.0 / dist;
+float calculateForce(float dist, float delta) {
+    float force = 144.0 * delta * 4.0 / dist;
     // avoid force being too large
     if (force > 1000) {
         force = 1000;
@@ -23,7 +23,7 @@ float calculateForce(float dist) {
     return force;
 }
 
-void updateParticles(Vector2* particles, Vector2* particlesSpeed, int particleCount) {
+void updateParticles(float delta, Vector2* particles, Vector2* particlesSpeed, int particleCount) {
     Vector2 mousePos = GetMousePosition();
     float mouseX = mousePos.x;
     float mouseY = mousePos.y;
@@ -40,7 +40,7 @@ void updateParticles(Vector2* particles, Vector2* particlesSpeed, int particleCo
 
         // how many force to apply on particle
         // the closer to mouse, the larger the force (like gravity)
-        float force = calculateForce(dist);
+        float force = calculateForce(dist, delta);
 
         // gradually slow down (like fraction)
         particlesSpeed[i].x *= 0.995;
@@ -119,7 +119,9 @@ int main() {
 
         // only move particles after first mouse move
         if (isMouseMoved) {
-            updateParticles(particles, particlesSpeed, PARTICLE_COUNT);
+            // make particle speed independent from frame rate
+            float delta = GetFrameTime();
+            updateParticles(delta, particles, particlesSpeed, PARTICLE_COUNT);
             updateImageWithParticles(&img, particles, PARTICLE_COUNT);
         }
 
