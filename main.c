@@ -133,7 +133,10 @@ int main() {
         EndDrawing();
         UnloadTexture(texture);
     }
+    
     UnloadImage(img);
+    free(particles);
+    free(particlesSpeed);
 
     CloseWindow();
     return 0;
