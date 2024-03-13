@@ -14,8 +14,12 @@ float randf() {
     return (float)rand() / (float)(RAND_MAX);
 }
 
-float calculateForce(float dist, float delta) {
-    float force = 144.0 * delta * 4.0 / dist;
+float calculateForce(float dist) {
+    // prevent division by zero
+    if (dist == 0) {
+        return 0;
+    }
+    float force = 720.0 / dist;
     // avoid force being too large
     if (force > 1000) {
         force = 1000;
@@ -33,23 +37,27 @@ void updateParticles(float delta, Vector2* particles, Vector2* particlesSpeed, i
         float x = particles[i].x, y = particles[i].y;
 
         // direction vector towards mouse
-        float deltaX = mouseX - x;
-        float deltaY = mouseY - y;
+        float xVec = mouseX - x;
+        float yVec = mouseY - y;
         // distance between particle and mouse
-        float dist = deltaX * deltaX + deltaY * deltaY;
+        float dist = xVec * xVec + yVec * yVec;
 
         // how many force to apply on particle
         // the closer to mouse, the larger the force (like gravity)
-        float force = calculateForce(dist, delta);
+        float force = calculateForce(dist);
+
+        // make force framerate-independent
+        force = force * delta;
 
         // gradually slow down (like fraction)
         particlesSpeed[i].x *= 0.995;
         particlesSpeed[i].y *= 0.995;
 
         // apply new speed on particles
-        particlesSpeed[i].x += force * deltaX;
-        particlesSpeed[i].y += force * deltaY;
+        particlesSpeed[i].x += force * xVec;
+        particlesSpeed[i].y += force * yVec;
 
+        // apply new position with speed
         particles[i].x = x + particlesSpeed[i].x;
         particles[i].y = y + particlesSpeed[i].y;
     }
