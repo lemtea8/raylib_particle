@@ -1,27 +1,35 @@
 #include "stdbool.h"
+#include "stdint.h"
 #include "stdlib.h"
+#include "string.h"
 #include "time.h"
 
 #include "raylib.h"
 
-float min(float x, float y) {
-	if (x < y) {
-		return x;
-	}
-	return y;
+const float SCREEN_WIDTH = 840.0;
+const float SCREEN_HEIGHT = 840.0;
+
+const int PARTICLE_COUNT = 500000;
+
+float randf() {
+    return (float)rand() / (float)(RAND_MAX);
 }
 
-float calStrength(float dist) {
-    float str = 5.0 / dist;
-    // avoid strength too large
-	str = min(str, 1000);
-    return str;
+float calculateForce(float dist) {
+    float force = 5.0 / dist;
+    // avoid force being too large
+    if (force > 1000) {
+        force = 1000;
+    }
+    return force;
 }
 
-void particlesFollowMouse(Vector2 mousePos, int particleCount, Vector2* particles, Vector2* particlesSpeed) {
+void updateParticles(Vector2* particles, Vector2* particlesSpeed, int particleCount) {
+    Vector2 mousePos = GetMousePosition();
     float mouseX = mousePos.x;
     float mouseY = mousePos.y;
 
+#pragma omp parallel for num_threads(4)
     for (int i = 0; i < particleCount; i++) {
         float x = particles[i].x, y = particles[i].y;
 
@@ -33,64 +41,98 @@ void particlesFollowMouse(Vector2 mousePos, int particleCount, Vector2* particle
 
         // how many force to apply on particle
         // the closer to mouse, the larger the force (like gravity)
-        float strength = calStrength(dist);
+        float force = calculateForce(dist);
 
         // gradually slow down (like fraction)
         particlesSpeed[i].x *= 0.995;
         particlesSpeed[i].y *= 0.995;
 
         // apply new speed on particles
-        particlesSpeed[i].x += strength * deltaX;
-        particlesSpeed[i].y += strength * deltaY;
+        particlesSpeed[i].x += force * deltaX;
+        particlesSpeed[i].y += force * deltaY;
 
         particles[i].x = x + particlesSpeed[i].x;
         particles[i].y = y + particlesSpeed[i].y;
     }
 }
 
-float randf() {
-	return (float)rand()/(float)(RAND_MAX);
+void rgbImageDrawPixel(Image* dst, int x, int y, Color color) {
+    if ((dst->data == NULL) || (x < 0) || (x >= dst->width) || (y < 0) || (y >= dst->height)) return;
+
+    ((unsigned char*)dst->data)[(y * dst->width + x) * 3] = color.r;
+    ((unsigned char*)dst->data)[(y * dst->width + x) * 3 + 1] = color.g;
+    ((unsigned char*)dst->data)[(y * dst->width + x) * 3 + 2] = color.b;
+}
+
+void updateImageWithParticles(Image* img, Vector2* particles, int particleCount) {
+    // clear image
+    ImageDrawRectangle(img, 0, 0, img->width, img->height, WHITE);
+
+#pragma omp parallel for num_threads(4)
+    for (int i = 0; i < particleCount; i++) {
+        // draw particle on image
+        rgbImageDrawPixel(img, (int)(particles[i].x), (int)(particles[i].y), BLACK);
+    }
 }
 
 int main() {
-	srand(time(NULL));
+    srand(time(NULL));
 
-    InitWindow(840, 840, "raylib particle");
-    // SetWindowState(FLAG_WINDOW_RESIZABLE);
+    InitWindow(SCREEN_WIDTH, SCREEN_HEIGHT, "raylib particle");
     SetWindowState(FLAG_VSYNC_HINT);
 
-    const int particleCount = 200000;
+    // avoid texture create info spamming console
+    SetTraceLogLevel(LOG_ERROR);
 
-    Vector2 particles[particleCount];
-    Vector2 particlesSpeed[particleCount];
+    // store position of each particle
+    Vector2* particles = malloc(sizeof(Vector2) * PARTICLE_COUNT);
+    // store speed vector of each particle
+    Vector2* particlesSpeed = malloc(sizeof(Vector2) * PARTICLE_COUNT);
 
-    for (int i = 0; i < particleCount; i++) {
-        particles[i].x = randf() * 840.0;
-        particles[i].y = randf() * 840.0;
+    for (int i = 0; i < PARTICLE_COUNT; i++) {
+        particles[i].x = randf() * SCREEN_WIDTH;
+        particles[i].y = randf() * SCREEN_HEIGHT;
     }
+
+    // 3 channels: RGB
+    void* buffer = malloc(SCREEN_WIDTH * SCREEN_HEIGHT * 3 * sizeof(uint8_t));
+    Image img = {
+        .data = buffer,
+        .width = SCREEN_WIDTH,
+        .height = SCREEN_HEIGHT,
+        .format = PIXELFORMAT_UNCOMPRESSED_R8G8B8,
+        .mipmaps = 1,
+    };
+
+    // initial particle draw
+    updateImageWithParticles(&img, particles, PARTICLE_COUNT);
 
     bool isMouseMoved = false;
 
     while (!WindowShouldClose()) {
         BeginDrawing();
 
-        ClearBackground(WHITE);
-        DrawFPS(0, 0);
-
-        // Initial mouse position must be (0, 0)
-        Vector2 pos = GetMousePosition();
-        if (pos.x != 0 && pos.y != 0) {
+        // initial mouse position must be (0, 0)
+        Vector2 mousePos = GetMousePosition();
+        if (mousePos.x != 0 && mousePos.y != 0) {
             isMouseMoved = true;
         }
 
+        // only move particles after first mouse move
         if (isMouseMoved) {
-            particlesFollowMouse(pos, particleCount, particles, particlesSpeed);
+            updateParticles(particles, particlesSpeed, PARTICLE_COUNT);
+            updateImageWithParticles(&img, particles, PARTICLE_COUNT);
         }
-        for (int i = 0; i < particleCount; i++) {
-            DrawPixelV(particles[i], BLACK);
-        }
+
+        // draw the particle image on screen
+        Texture texture = LoadTextureFromImage(img);
+        DrawTexture(texture, 0, 0, WHITE);
+        DrawFPS(0, 0);
+
         EndDrawing();
+        UnloadTexture(texture);
     }
+    UnloadImage(img);
 
     CloseWindow();
     return 0;
